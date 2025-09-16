@@ -1,0 +1,23 @@
+[project]
+name = "slack-notifier-mcp"
+version = "0.1.0"
+description = "MCP server for sending Slack progress update notifications"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0",
+    "slack-sdk>=3.20.0",
+]
+
+[project.scripts]
+slack-notifier-mcp = "slack_notifier_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatchling.build.targets.wheel]
+packages = ["src/slack_notifier_mcp"]
+
+[tool.uv]
+dev-dependencies = []
