@@ -8,6 +8,7 @@ using the Slack Web API with OAuth bot tokens.
 
 import logging
 import os
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -74,24 +75,65 @@ def get_slack_channel() -> str:
     return channel
 
 
+def process_markdown_for_slack(text: str) -> str:
+    """
+    Process markdown text to be more compatible with Slack's mrkdwn format.
+
+    Args:
+        text: Raw text that may contain markdown
+
+    Returns:
+        Text formatted for Slack's mrkdwn
+    """
+    # Convert **bold** to *bold* (Slack uses single asterisks)
+    text = re.sub(r"\*\*(.*?)\*\*", r"*\1*", text)
+
+    # Convert __italic__ to _italic_ (Slack uses single underscores)
+    text = re.sub(r"__(.*?)__", r"_\1_", text)
+
+    # Convert markdown headers to bold text with line breaks
+    text = re.sub(r"^### (.*?)$", r"\n*\1*\n", text, flags=re.MULTILINE)
+    text = re.sub(r"^## (.*?)$", r"\n*\1*\n", text, flags=re.MULTILINE)
+    text = re.sub(r"^# (.*?)$", r"\n*\1*\n", text, flags=re.MULTILINE)
+
+    # Convert markdown links [text](url) to Slack format <url|text>
+    text = re.sub(r"\[([^\]]+)\]\(([^\)]+)\)", r"<\2|\1>", text)
+
+    # Convert - bullet points to • for better visibility
+    text = re.sub(r"^- ", "• ", text, flags=re.MULTILINE)
+
+    # Convert * bullet points to •
+    text = re.sub(r"^\* ", "• ", text, flags=re.MULTILINE)
+
+    # Ensure proper spacing around code blocks
+    text = re.sub(r"```([^`]+)```", r"\n```\1```\n", text)
+
+    # Convert inline code `text` to proper Slack format
+    text = re.sub(r"`([^`]+)`", r"`\1`", text)
+
+    return text.strip()
+
+
 def format_slack_blocks(
     summary: str,
+    agent_name: str,
+    project_name: str,
     details: Optional[str] = None,
     status: str = "completed",
     timestamp: Optional[str] = None,
     task_id: Optional[str] = None,
-    agent_name: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Format a progress update message using Slack Block Kit.
 
     Args:
         summary: Brief summary of what was accomplished
+        agent_name: Name of the agent performing the task (required)
+        project_name: Name of the project (required)
         details: Optional detailed information about the task
         status: Status of the task (completed, failed, in_progress, etc.)
         timestamp: Optional ISO timestamp string
         task_id: Optional task identifier
-        agent_name: Optional name of the agent
 
     Returns:
         List of Slack Block Kit blocks
@@ -120,22 +162,23 @@ def format_slack_blocks(
     else:
         formatted_time = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
 
+    # Create header with project and agent info for easy identification
+    header_text = f"{project_name} • {agent_name}"
+
     blocks = [
         {
             "type": "header",
-            "text": {"type": "plain_text", "text": "Agent Progress Update"},
+            "text": {"type": "plain_text", "text": header_text},
         }
     ]
 
-    # Build main content section
-    main_fields = []
+    # Build main content section - always include project and agent for easy identification
+    main_fields = [
+        {"type": "mrkdwn", "text": f"*Project:*\n{project_name}"},
+        {"type": "mrkdwn", "text": f"*Agent:*\n{agent_name}"},
+    ]
 
-    if agent_name:
-        main_fields.append({"type": "mrkdwn", "text": f"*Agent:*\n{agent_name}"})
-
-    if task_id:
-        main_fields.append({"type": "mrkdwn", "text": f"*Task ID:*\n`{task_id}`"})
-
+    # Add status and timestamp
     main_fields.extend(
         [
             {"type": "mrkdwn", "text": f"*Status:*\n{emoji} {status.title()}"},
@@ -143,22 +186,29 @@ def format_slack_blocks(
         ]
     )
 
+    # Add task ID if provided
+    if task_id:
+        main_fields.append({"type": "mrkdwn", "text": f"*Task ID:*\n`{task_id}`"})
+
     blocks.append({"type": "section", "fields": main_fields})
 
-    # Add summary section
+    # Add summary section with markdown processing
+    processed_summary = process_markdown_for_slack(summary)
     blocks.append(
         {
             "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*Summary:*\n{summary}"},
+            "text": {"type": "mrkdwn", "text": f"*Summary:*\n{processed_summary}"},
         }
     )
 
     # Add details section if provided
     if details:
+        # Process details for better Slack markdown formatting
+        processed_details = process_markdown_for_slack(details)
         blocks.append(
             {
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": f"*Details:*\n{details}"},
+                "text": {"type": "mrkdwn", "text": f"*Details:*\n{processed_details}"},
             }
         )
 
@@ -168,11 +218,12 @@ def format_slack_blocks(
 @mcp.tool()
 def slack_progress_update(
     summary: str,
+    agent_name: str,
+    project_name: str,
     details: Optional[str] = None,
     status: str = "completed",
     timestamp: Optional[str] = None,
     task_id: Optional[str] = None,
-    agent_name: Optional[str] = None,
     thread_ts: Optional[str] = None,
 ) -> str:
     """
@@ -180,15 +231,17 @@ def slack_progress_update(
 
     This tool sends a formatted message to the configured Slack channel summarizing what
     an agent has accomplished when it finishes its current task. The message includes
-    status, summary, optional details, and timestamp information.
+    status, summary, optional details, and timestamp information. For easy identification
+    across multiple projects, include both agent_name and project_name when possible.
 
     Args:
         summary: Brief summary of what was accomplished (required)
+        agent_name: Name of the agent performing the task (required)
+        project_name: Name of the project (required)
         details: Optional detailed information about the task
         status: Status of the task (completed, failed, in_progress, warning, info, success, error, running)
         timestamp: Optional ISO timestamp string (defaults to current time)
         task_id: Optional task identifier for tracking
-        agent_name: Optional name of the agent performing the task
         thread_ts: Optional thread timestamp to reply in a thread
 
     Returns:
@@ -205,11 +258,12 @@ def slack_progress_update(
         # Format the message blocks
         blocks = format_slack_blocks(
             summary=summary,
+            agent_name=agent_name,
+            project_name=project_name,
             details=details,
             status=status,
             timestamp=timestamp,
             task_id=task_id,
-            agent_name=agent_name,
         )
 
         # Create fallback text for notifications

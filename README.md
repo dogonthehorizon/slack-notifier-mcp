@@ -109,6 +109,8 @@ Sends a progress update notification to the pre-configured Slack channel.
 **Parameters:**
 
 - `summary` (required): Brief summary of what was accomplished
+- `agent_name` (required): Name of the agent performing the task
+- `project_name` (required): Name of the project
 - `details` (optional): Detailed information about the task
 - `status` (optional): Status of the task - one of:
   - `completed` (default) - ✅
@@ -121,7 +123,6 @@ Sends a progress update notification to the pre-configured Slack channel.
   - `running` - 🔄
 - `timestamp` (optional): ISO timestamp string (defaults to current time)
 - `task_id` (optional): Task identifier for tracking
-- `agent_name` (optional): Name of the agent performing the task
 - `thread_ts` (optional): Thread timestamp to reply in a thread
 
 **Example Usage:**
@@ -130,25 +131,29 @@ Sends a progress update notification to the pre-configured Slack channel.
 # Basic usage
 result = client.call_tool("slack-progress-update", {
     "summary": "Successfully processed 150 customer records",
+    "agent_name": "DataProcessor",
+    "project_name": "CustomerAnalytics",
     "status": "completed"
 })
 
 # Detailed usage with all parameters
 result = client.call_tool("slack-progress-update", {
     "summary": "Data analysis pipeline completed",
+    "agent_name": "DataAnalysisAgent",
+    "project_name": "CustomerInsights",
     "details": "Processed 1,250 rows, identified 23 anomalies, generated 5 reports",
     "status": "completed",
     "task_id": "TASK-2024-001",
-    "agent_name": "DataAnalysisAgent",
     "timestamp": "2024-01-15T10:30:00Z"
 })
 
 # Error notification with thread reply
 result = client.call_tool("slack-progress-update", {
     "summary": "Failed to connect to external API",
+    "agent_name": "APIConnectorAgent",
+    "project_name": "DataIntegration",
     "details": "Connection timeout after 30 seconds. Will retry in 5 minutes.",
     "status": "failed",
-    "agent_name": "APIConnectorAgent",
     "thread_ts": "1642251234.123456"  # Reply in existing thread
 })
 ```
@@ -158,11 +163,12 @@ result = client.call_tool("slack-progress-update", {
 The tool generates rich, formatted messages in Slack that look like this:
 
 ```
-Agent Progress Update
+CustomerInsights • DataAnalysisAgent
 ═══════════════════════════════════════
 
-Agent: DataAnalysisAgent              Task ID: TASK-2024-001
+Project: CustomerInsights             Agent: DataAnalysisAgent
 Status: ✅ Completed                  Timestamp: 2024-01-15 10:30:00 UTC
+Task ID: TASK-2024-001
 
 Summary:
 Data analysis pipeline completed
@@ -170,6 +176,15 @@ Data analysis pipeline completed
 Details:
 Processed 1,250 rows, identified 23 anomalies, generated 5 reports
 ```
+
+**Key Benefits for Multi-Project Workflows:**
+
+- **Required identification**: Every message must include both project and agent names
+- **Header shows project and agent** for instant identification
+- **Project field** clearly indicates which project the update relates to
+- **Agent field** shows which agent performed the work
+- **Easy filtering** in Slack search by project or agent name
+- **Consistent reporting** ensures no messages are sent without proper context
 
 ## Integration with Zed Editor
 
